@@ -1,160 +1,165 @@
-import os
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-from supabase import create_client, Client
-from datetime import datetime
+import numpy as np
+from sklearn.linear_model import LinearRegression
+import google.generativeai as genai
+import os
 
-# --- 1. KONFIGURASI HALAMAN ---
-st.set_page_config(
-    page_title="bacakuy-smart-monitoring",
-    page_icon="📈",
-    layout="wide"
-)
+# ==========================================
+# 1. KONFIGURASI & SETUP AWAL
+# ==========================================
+st.set_page_config(page_title="Bacakuy Sales AI", layout="wide")
 
-# --- 2. KONEKSI AMAN KE SUPABASE (OS ENVIRON) ---
-@st.cache_resource
-def init_connection():
-    try:
-        # Mengambil kredensial dari environment variables untuk keamanan
-        url = os.environ.get("SUPABASE_URL")
-        key = os.environ.get("SUPABASE_KEY")
-        
-        if not url or not key:
-            st.error("Konfigurasi Gagal: SUPABASE_URL atau SUPABASE_KEY tidak ditemukan di environment variables.")
-            return None
-        
-        return create_client(url, key)
-    except Exception as e:
-        st.error(f"Gagal menginisialisasi koneksi Supabase: {e}")
-        return None
+# --- KONFIGURASI GENAI (GEMINI) ---
+# PENTING: Ganti string di bawah ini dengan API KEY asli Anda jika belum diset di Environment Variable
+# Tips Senior Dev: Jangan pernah hardcode API Key di produksi. Gunakan st.secrets atau os.environ.
+# Sesuai request, kita mencoba mengambil dari environment, jika tidak ada, harap masukkan manual.
+api_key = os.environ.get("GEMINI_API_KEY") 
 
-# --- 3. FUNGSI PENGAMBILAN DATA ---
-@st.cache_data(ttl=600)  # Refresh data setiap 10 menit
-def load_data():
-    supabase = init_connection()
-    if not supabase:
-        return pd.DataFrame()
+# Jika environment variable kosong, gunakan placeholder (Mahasiswa harus mengganti ini)
+if not api_key:
+    # Masukkan API Key Google Gemini Anda di sini
+    api_key = "MASUKKAN_API_KEY_GEMINI_ANDA_DISINI" 
+
+try:
+    genai.configure(api_key=api_key)
+except Exception as e:
+    st.error(f"Konfigurasi API Key Gagal: {e}")
+
+# ==========================================
+# 2. LOAD & CLEAN DATA (MODUL 5 CORE)
+# ==========================================
+@st.cache_data # Decorator agar data tidak di-load ulang setiap kali ada interaksi
+def load_and_train_model():
+    """
+    Fungsi ini memuat data, membersihkan data, dan melatih model Linear Regression.
+    """
+    # --- A. LOAD DATA ---
+    # Karena saya tidak memiliki file CSV fisik Anda, saya membuat Dummy Data 'bacakuy-sales'
+    # agar aplikasi ini bisa langsung jalan (RUNNABLE).
+    # Jika Anda punya file csv, uncomment baris: df = pd.read_csv('bacakuy-sales.csv')
     
-    try:
-        # Mengambil data dari tabel penjualan_buku
-        response = supabase.table("penjualan_buku").select("*").execute()
-        df = pd.DataFrame(response.data)
-        
-        if not df.empty:
-            # Konversi tanggal dan pastikan tipe data numerik benar
-            df['publish_date'] = pd.to_datetime(df['publish_date'])
-            numeric_cols = ['publisher_revenue', 'units_sold', 'author_rating', 'book_average_rating']
-            for col in numeric_cols:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
-        return df
-    except Exception as e:
-        st.error(f"Terjadi kesalahan saat menarik data: {e}")
-        return pd.DataFrame()
+    data_dummy = {
+        'units_sold': [100, 150, 200, 120, 300, 50, 400, 250, 180, None], # Ada None untuk tes dropna
+        'book_average_rating': [4.5, 4.2, 4.8, 3.9, 4.9, 3.5, 4.7, 4.1, 4.3, 4.0],
+        'gross_sales': [5000000, 7500000, 12000000, 6000000, 18000000, 2000000, 25000000, 13000000, 9000000, 500000]
+    }
+    df = pd.DataFrame(data_dummy)
+    
+    # --- B. DATA CLEANING (WAJIB) ---
+    # Menghapus baris yang memiliki nilai kosong (NaN)
+    df.dropna(inplace=True)
+    
+    # --- C. TRAINING MODEL ---
+    # Kita menggunakan units_sold dan book_average_rating untuk memprediksi gross_sales
+    X = df[['units_sold', 'book_average_rating']]
+    y = df['gross_sales']
+    
+    model = LinearRegression()
+    model.fit(X, y)
+    
+    return model, df
 
-# Inisialisasi Data Utama
-df_raw = load_data()
-
-# --- 4. TAMPILAN HEADER ---
-st.title("📊 bacakuy-smart-monitoring")
-st.markdown("""
-Dashboard ini berfungsi untuk menganalisis performa penjualan buku secara *real-time* berdasarkan data yang tersimpan di Supabase. 
-Gunakan filter di sidebar untuk menyesuaikan tampilan data.
-""")
-st.divider()
-
-# Cek apakah data tersedia sebelum melanjutkan
-if df_raw.empty:
-    st.warning("⚠️ Data tidak tersedia. Pastikan tabel 'penjualan_buku' memiliki data dan koneksi Supabase sudah benar.")
+# Memanggil fungsi training saat aplikasi dimuat
+try:
+    model, df_clean = load_and_train_model()
+except Exception as e:
+    st.error(f"Terjadi kesalahan saat training model: {e}")
     st.stop()
 
-# --- 5. SIDEBAR FILTER ---
-st.sidebar.header("Filter Navigasi")
+# ==========================================
+# 3. INTERFACE (UI) STREAMLIT
+# ==========================================
+st.title("📚 Bacakuy Sales Prediction & Islamic Strategy AI")
+st.markdown("---")
 
-# Filter Berdasarkan Genre
-genres = sorted(df_raw['genre'].dropna().unique())
-selected_genres = st.sidebar.multiselect("Pilih Genre:", options=genres, default=genres)
+# --- SIDEBAR INPUT ---
+st.sidebar.header("🔍 Input Fitur Prediksi")
 
-# Filter Berdasarkan Author Rating
-min_rate = float(df_raw['author_rating'].min())
-max_rate = float(df_raw['author_rating'].max())
-selected_rating = st.sidebar.slider(
-    "Rentang Author Rating:",
-    min_value=min_rate,
-    max_value=max_rate,
-    value=(min_rate, max_rate)
+# Input Numerik untuk Units Sold
+input_units = st.sidebar.number_input(
+    "Jumlah Unit Terjual (Units Sold)", 
+    min_value=0, 
+    value=100,
+    step=10,
+    help="Masukkan perkiraan jumlah buku yang terjual."
 )
 
-# Aplikasi Filter ke Dataframe
-df_filtered = df_raw[
-    (df_raw['genre'].isin(selected_genres)) &
-    (df_raw['author_rating'] >= selected_rating[0]) &
-    (df_raw['author_rating'] <= selected_rating[1])
-]
+# Input Numerik untuk Rating
+input_rating = st.sidebar.number_input(
+    "Rating Rata-rata Buku", 
+    min_value=0.0, 
+    max_value=5.0, 
+    value=4.5,
+    step=0.1,
+    help="Skala 1.0 sampai 5.0"
+)
 
-# --- 6. KPI UTAMA ---
-if not df_filtered.empty:
-    kpi1, kpi2, kpi3 = st.columns(3)
+# Tombol Prediksi
+tombol_prediksi = st.sidebar.button("Prediksi Sekarang")
+
+# ==========================================
+# 4. LOGIKA PREDIKSI & GENAI
+# ==========================================
+
+if tombol_prediksi:
+    # --- TAHAP 1: PREDIKSI ML ---
+    # Membentuk array 2D karena sklearn membutuhkan format [[fitur1, fitur2]]
+    input_data = [[input_units, input_rating]]
     
-    with kpi1:
-        total_rev = df_filtered['publisher_revenue'].sum()
-        # Format Mata Uang Dollar dengan pemisah ribuan koma
-        st.metric("Total Publisher Revenue", f"${total_rev:,.2f}")
-        
-    with kpi2:
-        total_units = int(df_filtered['units_sold'].sum())
-        st.metric("Total Units Sold", f"{total_units:,}")
-        
-    with kpi3:
-        avg_rating = df_filtered['book_average_rating'].mean()
-        st.metric("Average Book Rating", f"{avg_rating:.2f} / 5.0")
+    # Melakukan prediksi
+    hasil_prediksi = model.predict(input_data)[0]
+    
+    # Menampilkan Hasil Prediksi
+    st.subheader("📊 Hasil Prediksi Penjualan")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.metric(label="Estimasi Gross Sales (IDR)", value=f"Rp {hasil_prediksi:,.0f}")
+    
+    with col2:
+        st.info("Prediksi ini menggunakan algoritma Linear Regression berdasarkan data historis.")
 
-    st.write("") # Spacer
+    # --- TAHAP 2: ANALISIS GENAI (GEMINI) ---
+    st.markdown("---")
+    st.subheader("🤖 Analisis Strategi Bisnis Syariah (AI)")
+    
+    with st.spinner('Sedang meminta saran strategi syariah ke Gemini AI...'):
+        try:
+            # Membuat Prompt untuk AI
+            prompt_text = f"""
+            Anda adalah seorang konsultan bisnis Islami yang ahli.
+            
+            Data Prediksi:
+            - Jumlah Unit Terjual: {input_units} buku
+            - Rating Buku: {input_rating}/5.0
+            - Estimasi Pendapatan Kotor: Rp {hasil_prediksi:,.0f}
+            
+            Tugas:
+            1. Berikan analisis singkat mengenai performa penjualan ini.
+            2. Berikan 3 strategi pemasaran yang sesuai dengan prinsip Syariah (Muamalah) untuk meningkatkan penjualan atau keberkahan pendapatan tersebut.
+            3. Sertakan satu dalil (Ayat Quran atau Hadits) yang relevan tentang perdagangan yang jujur atau sedekah.
+            """
+            
+            # Mengirim request ke Gemini
+            # Menggunakan model 'gemini-pro' (pastikan API key valid)
+            genai_model = genai.GenerativeModel('gemini-pro')
+            response = genai_model.generate_content(prompt_text)
+            
+            # Menampilkan respon
+            st.write(response.text)
+            
+        except Exception as e:
+            st.warning("Gagal mendapatkan analisis AI. Pastikan API Key Gemini sudah benar.")
+            st.error(f"Error details: {e}")
 
-    # --- 7. GRAFIK TREN BULANAN (LINE CHART) ---
-    st.subheader("📈 Tren Pendapatan Bulanan")
-    try:
-        df_filtered['month_year'] = df_filtered['publish_date'].dt.to_period('M').astype(str)
-        monthly_trend = df_filtered.groupby('month_year')['publisher_revenue'].sum().reset_index()
-        
-        fig_line = px.line(
-            monthly_trend, 
-            x='month_year', 
-            y='publisher_revenue',
-            labels={'publisher_revenue': 'Revenue ($)', 'month_year': 'Bulan'},
-            markers=True,
-            template="plotly_white"
-        )
-        fig_line.update_traces(line_color='#1f77b4')
-        st.plotly_chart(fig_line, use_container_width=True)
-    except Exception as e:
-        st.error(f"Gagal memuat grafik tren: {e}")
+# ==========================================
+# 5. DATA PREVIEW (OPSIONAL)
+# ==========================================
+with st.expander("Lihat Data Training (Cleaned)"):
+    st.dataframe(df_clean)
+```
 
-    # --- 8. KOMPOSISI GENRE (HORIZONTAL BAR CHART) ---
-    st.subheader("📚 Unit Terjual Berdasarkan Genre")
-    try:
-        genre_data = df_filtered.groupby('genre')['units_sold'].sum().sort_values(ascending=True).reset_index()
-        
-        fig_bar = px.bar(
-            genre_data,
-            x='units_sold',
-            y='genre',
-            orientation='h',
-            color='units_sold',
-            # Menggunakan skema warna Blues yang profesional
-            color_continuous_scale='Blues',
-            labels={'units_sold': 'Total Unit', 'genre': 'Genre'},
-            template="plotly_white"
-        )
-        fig_bar.update_layout(showlegend=False)
-        st.plotly_chart(fig_bar, use_container_width=True)
-    except Exception as e:
-        st.error(f"Gagal memuat grafik genre: {e}")
+---
 
-else:
-    st.info("💡 Tidak ada data yang sesuai dengan kriteria filter Anda.")
-
-# --- 9. FOOTER ---
-st.divider()
-st.caption(f"bacakuy-smart-monitoring | System Status: Online | {datetime.now().year}")
+### 🎓 Penjelasan Detail untuk Laporan Praktikum
