@@ -5,8 +5,8 @@ from sklearn.linear_model import LinearRegression
 import google.generativeai as genai
 from supabase import create_client
 
-# --- 1. CONFIG & THEME (Earthtone Coklat Cream) ---
-st.set_page_config(page_title="Bacakuy Intelligence PRO", layout="wide")
+# --- 1. CONFIG & THEME (Earthtone) ---
+st.set_page_config(page_title="Bacakuy Intelligence Hub", layout="wide")
 
 st.markdown("""
     <style>
@@ -31,22 +31,30 @@ except Exception as e:
 @st.cache_data(ttl=60)
 def load_data():
     try:
+        # Menarik data tanpa filter agar semua tanggal muncul
         res = supabase.table("bacakuy_sales").select("*").execute()
         df = pd.DataFrame(res.data)
         
-        # Konversi tipe data numerik
+        if df.empty:
+            return df
+
+        # Pembersihan Tipe Data Numerik
         for col in ['units_sold', 'book_average_rating', 'gross_sale']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.'), errors='coerce')
         
-        # Konversi kolom tanggal menjadi string untuk Dropdown
-        if 'created_at' in df.columns:
-            df['date_str'] = pd.to_datetime(df['created_at']).dt.strftime('%Y-%m-%d')
+        # Penanganan Tanggal yang Akurat dari Supabase
+        # Kami mencoba mendeteksi kolom tanggal (biasanya 'created_at')
+        date_col = 'created_at' if 'created_at' in df.columns else None
+        
+        if date_col:
+            df['display_date'] = pd.to_datetime(df[date_col]).dt.strftime('%Y-%m-%d')
         else:
-            df['date_str'] = "2024-01-01"
+            df['display_date'] = "No Date Info"
             
         return df.dropna(subset=['gross_sale']).reset_index(drop=True)
-    except:
+    except Exception as e:
+        st.error(f"Gagal memuat data: {e}")
         return pd.DataFrame()
 
 df_raw = load_data()
@@ -86,21 +94,21 @@ st.divider()
 st.title("🚀 Strategic Intelligence Hub")
 
 if not df_raw.empty:
-    # FILTER: Genre & Date Dropdown (Sesuai Permintaan)
+    # FILTER DROPDOWN: Genre & Tanggal (Sinkron dengan Supabase)
     f1, f2 = st.columns(2)
     with f1:
         sel_genre = st.selectbox("Pilih Genre:", ["Semua Genre"] + sorted(list(df_raw['genre'].unique())))
     with f2:
-        # GANTI: Sekarang menggunakan Selectbox (Dropdown) bukan rentang
-        date_options = ["Semua Tanggal"] + sorted(list(df_raw['date_str'].unique()), reverse=True)
-        sel_date = st.selectbox("Pilih Tanggal:", date_options)
+        # Mengambil semua tanggal unik yang ada di tabel Supabase
+        all_dates = sorted(df_raw['display_date'].unique(), reverse=True)
+        sel_date = st.selectbox("Pilih Tanggal (Supabase Sync):", ["Semua Tanggal"] + all_dates)
 
     # Proses Filter
     df = df_raw.copy()
     if sel_genre != "Semua Genre":
         df = df[df['genre'] == sel_genre]
     if sel_date != "Semua Tanggal":
-        df = df[df['date_str'] == sel_date]
+        df = df[df['display_date'] == sel_date]
 
     # KPI Row
     k1, k2, k3, k4 = st.columns(4)
@@ -126,7 +134,11 @@ if not df_raw.empty:
     
     with t2:
         st.subheader("Operational Revenue Trend")
-        st.area_chart(df['gross_sale'].reset_index(drop=True), color="#A0522D")
+        # Mengurutkan berdasarkan tanggal agar tren grafik tidak berantakan
+        trend_data = df.copy()
+        if 'created_at' in trend_data.columns:
+            trend_data = trend_data.sort_values('created_at')
+        st.area_chart(trend_data.reset_index()['gross_sale'], color="#A0522D")
     
     with t3:
         st.subheader("Rating vs Units Correlation")
@@ -150,17 +162,17 @@ with tab_add:
         c1, c2 = st.columns(2)
         with c1:
             nt = st.text_input("Judul Buku")
-            ng = st.selectbox("Genre", df_raw['genre'].unique() if not df_raw.empty else ["Fiction"])
+            ng = st.selectbox("Genre", sorted(df_raw['genre'].unique()) if not df_raw.empty else ["Fiction"])
             np = st.text_input("Publisher")
         with c2:
             nu = st.number_input("Units Sold", min_value=0)
             nr = st.number_input("Rating", 0.0, 5.0)
             ns = st.number_input("Gross Sale", min_value=0)
         
-        if st.form_submit_button("Simpan Data"):
+        if st.form_submit_button("Simpan Data ke Supabase"):
             supabase.table("bacakuy_sales").insert({
                 "book_title": nt, "genre": ng, "publisher": np,
                 "units_sold": nu, "book_average_rating": nr, "gross_sale": ns
             }).execute()
-            st.success("Data Berhasil Masuk!")
+            st.success("Data Berhasil Disimpan!")
             st.cache_data.clear()
