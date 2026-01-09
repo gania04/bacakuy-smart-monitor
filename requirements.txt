@@ -1,6 +1,5 @@
-streamlit
+streamlit==1.31.1
 pandas
-plotly
-supabase
 scikit-learn
-google-generativeai 
+supabase
+google-generativeai==0.8.3
