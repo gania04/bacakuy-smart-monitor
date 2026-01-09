@@ -52,7 +52,7 @@ def load_data():
 df_raw = load_data()
 
 # =========================================================
-# BAGIAN 1: PREDIKSI & AI INSIGHT
+# BAGIAN 1: PREDIKSI & AI INSIGHT (DI ATAS)
 # =========================================================
 st.title("📑 Bacakuy Sales Prediction & AI Analysis")
 col_p1, col_p2 = st.columns([1, 2])
@@ -74,12 +74,12 @@ with col_p2:
             resp = model_ai.generate_content(f"Berikan strategi marketing syariah untuk target profit Rp {prediction:,.0f}")
             st.success(resp.text)
         except:
-            st.warning("Insight AI Gagal.")
+            st.warning("Insight AI Gagal (404).")
 
 st.divider()
 
 # =========================================================
-# BAGIAN 2: STRATEGIC HUB
+# BAGIAN 2: STRATEGIC HUB (KPI & GRAFIK FILTER)
 # =========================================================
 st.title("🚀 Strategic Intelligence Hub")
 
@@ -103,7 +103,7 @@ if not df_raw.empty:
     k4.metric("Brand Loyalty", f"{df['book_average_rating'].mean():.2f}/5")
 
     # TABS GRAFIK
-    t1, t2, t3 = st.tabs(["📊 Performance Intelligence", "📈 Tren Penjualan", "🎯 Rating Distribution"])
+    t1, t2, t3 = st.tabs(["📊 Performance Intelligence", "📈 Tren Penjualan", "🎯 Rating vs Market Popularity"])
     
     with t1:
         st.subheader("Publisher & Sales Performance")
@@ -119,19 +119,25 @@ if not df_raw.empty:
     
     with t2:
         st.subheader("Operational Revenue Trend")
-        # Area chart untuk tren pendapatan
         st.area_chart(df.reset_index()['gross_sale'], color="#A0522D")
     
     with t3:
-        # GANTI: Menggunakan Area Chart untuk Rating per Genre
-        st.subheader("Rating Insight by Genre")
-        rating_avg = df.groupby('genre')['book_average_rating'].mean().reset_index()
-        st.area_chart(data=rating_avg.set_index('genre'), color="#5D4037")
+        # PERBAIKAN: Chart Area untuk membandingkan Rating dan Units Sold
+        st.subheader("Rating vs Units Sold (Market Popularity)")
+        # Kita ambil rata-rata rating dan total unit terjual per genre untuk melihat korelasi popularitas
+        popularity_data = df.groupby('genre').agg({
+            'book_average_rating': 'mean',
+            'units_sold': 'sum'
+        }).reset_index()
+        
+        # Menampilkan perbandingan dalam satu grafik area
+        st.area_chart(data=popularity_data.set_index('genre'), color=["#5D4037", "#D2B48C"])
+        st.caption("Coklat Tua: Avg Rating | Coklat Muda: Total Units Sold")
 
 st.divider()
 
 # =========================================================
-# BAGIAN 3: DATABASE
+# BAGIAN 3: DATABASE & TAMBAH DATA (DI PALING BAWAH)
 # =========================================================
 st.title("📁 Database Management")
 tab_view, tab_add = st.tabs(["🗂️ View Table", "➕ Add Record"])
