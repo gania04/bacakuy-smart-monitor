@@ -28,33 +28,34 @@ try:
 except Exception as e:
     st.error(f"Konfigurasi Error: {e}")
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=10) # Cache dipercepat agar data baru cepat muncul
 def load_data():
     try:
-        # Menarik data tanpa filter agar semua tanggal muncul
+        # Menarik seluruh kolom dari tabel bacakuy_sales
         res = supabase.table("bacakuy_sales").select("*").execute()
         df = pd.DataFrame(res.data)
         
         if df.empty:
             return df
 
-        # Pembersihan Tipe Data Numerik
+        # Pembersihan Tipe Data Numerik agar grafik akurat
         for col in ['units_sold', 'book_average_rating', 'gross_sale']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.'), errors='coerce')
         
-        # Penanganan Tanggal yang Akurat dari Supabase
-        # Kami mencoba mendeteksi kolom tanggal (biasanya 'created_at')
-        date_col = 'created_at' if 'created_at' in df.columns else None
-        
-        if date_col:
-            df['display_date'] = pd.to_datetime(df[date_col]).dt.strftime('%Y-%m-%d')
+        # --- PERBAIKAN SINKRONISASI TANGGAL ---
+        # Menggunakan kolom 'tanggal_transaksi' sesuai database Supabase Anda
+        if 'tanggal_transaksi' in df.columns:
+            # Pastikan format tanggal bersih (YYYY-MM-DD)
+            df['display_date'] = pd.to_datetime(df['tanggal_transaksi']).dt.strftime('%Y-%m-%d')
+        elif 'created_at' in df.columns:
+            df['display_date'] = pd.to_datetime(df['created_at']).dt.strftime('%Y-%m-%d')
         else:
-            df['display_date'] = "No Date Info"
+            df['display_date'] = "Tanggal Tidak Tersedia"
             
         return df.dropna(subset=['gross_sale']).reset_index(drop=True)
     except Exception as e:
-        st.error(f"Gagal memuat data: {e}")
+        st.error(f"Gagal sinkronisasi dengan Supabase: {e}")
         return pd.DataFrame()
 
 df_raw = load_data()
@@ -89,19 +90,19 @@ with col_p2:
 st.divider()
 
 # =========================================================
-# BAGIAN 2: STRATEGIC HUB (KPI & 3 TAB GRAFIK)
+# BAGIAN 2: STRATEGIC HUB (KPI & 2 GRAFIK PERFORMA)
 # =========================================================
 st.title("🚀 Strategic Intelligence Hub")
 
 if not df_raw.empty:
-    # FILTER DROPDOWN: Genre & Tanggal (Sinkron dengan Supabase)
+    # FILTER DROPDOWN: Genre & Tanggal Transaksi (Sinkron Supabase)
     f1, f2 = st.columns(2)
     with f1:
         sel_genre = st.selectbox("Pilih Genre:", ["Semua Genre"] + sorted(list(df_raw['genre'].unique())))
     with f2:
-        # Mengambil semua tanggal unik yang ada di tabel Supabase
+        # Menampilkan semua tanggal unik dari kolom tanggal_transaksi
         all_dates = sorted(df_raw['display_date'].unique(), reverse=True)
-        sel_date = st.selectbox("Pilih Tanggal (Supabase Sync):", ["Semua Tanggal"] + all_dates)
+        sel_date = st.selectbox("Pilih Tanggal Transaksi:", ["Semua Tanggal"] + all_dates)
 
     # Proses Filter
     df = df_raw.copy()
@@ -134,11 +135,8 @@ if not df_raw.empty:
     
     with t2:
         st.subheader("Operational Revenue Trend")
-        # Mengurutkan berdasarkan tanggal agar tren grafik tidak berantakan
-        trend_data = df.copy()
-        if 'created_at' in trend_data.columns:
-            trend_data = trend_data.sort_values('created_at')
-        st.area_chart(trend_data.reset_index()['gross_sale'], color="#A0522D")
+        # Mengurutkan tren berdasarkan data transaksi
+        st.area_chart(df.reset_index()['gross_sale'], color="#A0522D")
     
     with t3:
         st.subheader("Rating vs Units Correlation")
@@ -155,6 +153,7 @@ tab_view, tab_add = st.tabs(["🗂️ View Table", "➕ Add Record"])
 with tab_view:
     show_data = st.checkbox("Show Database Table", value=False)
     if show_data:
+        # Menampilkan tabel asli dari Supabase
         st.dataframe(df_raw, use_container_width=True)
 
 with tab_add:
@@ -162,17 +161,20 @@ with tab_add:
         c1, c2 = st.columns(2)
         with c1:
             nt = st.text_input("Judul Buku")
-            ng = st.selectbox("Genre", sorted(df_raw['genre'].unique()) if not df_raw.empty else ["Fiction"])
+            ng = st.selectbox("Genre", sorted(df_raw['genre'].unique()) if not df_raw.empty else ["Umum"])
             np = st.text_input("Publisher")
         with c2:
             nu = st.number_input("Units Sold", min_value=0)
             nr = st.number_input("Rating", 0.0, 5.0)
             ns = st.number_input("Gross Sale", min_value=0)
+            # Input tanggal transaksi baru
+            ntgl = st.date_input("Tanggal Transaksi")
         
         if st.form_submit_button("Simpan Data ke Supabase"):
             supabase.table("bacakuy_sales").insert({
                 "book_title": nt, "genre": ng, "publisher": np,
-                "units_sold": nu, "book_average_rating": nr, "gross_sale": ns
+                "units_sold": nu, "book_average_rating": nr, "gross_sale": ns,
+                "tanggal_transaksi": str(ntgl)
             }).execute()
-            st.success("Data Berhasil Disimpan!")
+            st.success("Data Berhasil Disimpan! Silakan Reboot Aplikasi.")
             st.cache_data.clear()
