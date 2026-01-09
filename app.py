@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import LabelEncoder # Untuk mengubah teks genre jadi angka agar dipahami AI
 import google.generativeai as genai
 from supabase import create_client
 
@@ -34,7 +35,6 @@ def load_data():
         res = supabase.table("bacakuy_sales").select("*").execute()
         df = pd.DataFrame(res.data)
         if df.empty: return df
-        # Konversi numerik yang aman
         for col in ['units_sold', 'book_average_rating', 'gross_sale']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
@@ -53,31 +53,47 @@ def load_data():
 df_raw = load_data()
 
 # =========================================================
-# BAGIAN 1: PREDIKSI & AI INSIGHT (RATING BOOSTER)
+# BAGIAN 1: PREDIKSI & AI INSIGHT (SEKARANG DENGAN GENRE)
 # =========================================================
 st.title("📑 Bacakuy Sales Prediction & AI Analysis")
 col_p1, col_p2 = st.columns([1, 2])
 
 with col_p1:
     st.subheader("🔍 AI Sales Predictor")
+    # Input tambahan: Genre
+    available_genres = sorted(df_raw['genre'].unique()) if not df_raw.empty else ["Umum"]
+    in_g = st.selectbox("Pilih Genre untuk Prediksi:", available_genres)
     in_u = st.number_input("Unit Terjual", value=100, min_value=1)
     in_r = st.slider("Rating Buku", 0.0, 5.0, 4.2)
     btn_predict = st.button("Hitung & Dapatkan Insight")
 
 with col_p2:
     if btn_predict and not df_raw.empty:
-        X = df_raw[['units_sold', 'book_average_rating']]
-        y = df_raw['gross_sale']
+        # Menyiapkan data untuk AI (Mengubah teks genre menjadi angka)
+        le = LabelEncoder()
+        df_ml = df_raw.copy()
+        df_ml['genre_encoded'] = le.fit_transform(df_ml['genre'])
+        
+        # Variabel X sekarang melibatkan Genre, Units, dan Rating
+        X = df_ml[['genre_encoded', 'units_sold', 'book_average_rating']]
+        y = df_ml['gross_sale']
+        
         model = LinearRegression().fit(X, y)
-        base_prediction = model.predict([[in_u, in_r]])[0]
         
-        # Logika Rating Booster
-        rating_impact = (in_r - 3.5) * (base_prediction * 0.1) 
-        final_prediction = max(0, base_prediction + rating_impact)
-        
-        st.metric("Estimasi Gross Sales", f"Rp {final_prediction:,.0f}")
+        # Encode genre yang dipilih user
         try:
-            resp = model_ai.generate_content(f"Strategi syariah untuk buku rating {in_r} agar profit Rp {final_prediction:,.0f} meningkat.")
+            genre_val = le.transform([in_g])[0]
+        except:
+            genre_val = 0
+            
+        # Kalkulasi Prediksi
+        final_prediction = model.predict([[genre_val, in_u, in_r]])[0]
+        final_prediction = max(0, final_prediction) # Agar tidak minus
+        
+        st.metric(f"Estimasi Gross Sales ({in_g})", f"Rp {final_prediction:,.0f}")
+        
+        try:
+            resp = model_ai.generate_content(f"Berikan strategi marketing syariah khusus untuk genre {in_g} dengan target profit Rp {final_prediction:,.0f}")
             st.success(resp.text)
         except:
             st.warning("Insight AI Gagal.")
@@ -85,14 +101,14 @@ with col_p2:
 st.divider()
 
 # =========================================================
-# BAGIAN 2: STRATEGIC HUB
+# BAGIAN 2: STRATEGIC HUB (TETAP SAMA SEPERTI INSTRUKSI SEBELUMNYA)
 # =========================================================
 st.title("🚀 Strategic Intelligence Hub")
 
 if not df_raw.empty:
     f1, f2 = st.columns(2)
     with f1:
-        sel_genre = st.selectbox("Pilih Genre:", ["Semua Genre"] + sorted(list(df_raw['genre'].unique())))
+        sel_genre = st.selectbox("Filter Genre Dashboard:", ["Semua Genre"] + sorted(list(df_raw['genre'].unique())))
     with f2:
         list_bulan = df_raw['bulan_tahun'].unique().tolist()
         sel_month = st.selectbox("Pilih Bulan Transaksi:", ["Semua Bulan"] + list_bulan)
@@ -101,7 +117,7 @@ if not df_raw.empty:
     if sel_genre != "Semua Genre": df = df[df['genre'] == sel_genre]
     if sel_month != "Semua Bulan": df = df[df['bulan_tahun'] == sel_month]
 
-    # KPI Row (Statis 45.1% sesuai instruksi)
+    # KPI Row
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Market Valuation", f"Rp {df['gross_sale'].sum():,.0f}")
     k2.metric("Circulation", f"{df['units_sold'].sum():,.0f}")
@@ -116,12 +132,10 @@ if not df_raw.empty:
         col_g1, col_g2 = st.columns(2)
         with col_g1:
             st.write("**Revenue by Publisher**")
-            # Perbaikan filter kolom agar tidak error
             pub_rev = df.groupby('publisher')['gross_sale'].sum().nlargest(5).reset_index()
             st.bar_chart(data=pub_rev, x='publisher', y='gross_sale', color="#D2B48C")
         with col_g2:
             st.write("**Units Sold by Publisher**")
-            # Perbaikan: Mengambil kolom 'units_sold' dengan benar
             pub_uni = df.groupby('publisher')['units_sold'].sum().nlargest(5).reset_index()
             st.bar_chart(data=pub_uni, x='publisher', y='units_sold', color="#8B4513")
     
@@ -134,7 +148,7 @@ if not df_raw.empty:
         st.subheader("Rating vs Market Popularity")
         pop_data = df.groupby('genre').agg({'book_average_rating': 'mean', 'units_sold': 'sum'}).reset_index()
         st.area_chart(data=pop_data.set_index('genre'), color=["#5D4037", "#D2B48C"])
-        st.caption("Coklat Tua: Rating | Coklat Muda: Units Sold")
+        st.caption("Coklat Tua: Avg Rating | Coklat Muda: Total Units Sold")
 
     with t4:
         st.subheader("Top Performing Authors")
@@ -161,7 +175,7 @@ with tab_add:
         with c1:
             nt = st.text_input("Judul Buku")
             na = st.text_input("Penulis (Author)")
-            ng = st.selectbox("Genre", sorted(df_raw['genre'].unique()) if not df_raw.empty else ["Umum"])
+            ng = st.selectbox("Genre Baru", sorted(df_raw['genre'].unique()) if not df_raw.empty else ["Umum"])
             np = st.text_input("Publisher")
         with c2:
             nu = st.number_input("Units Sold", min_value=0)
@@ -175,5 +189,5 @@ with tab_add:
                 "units_sold": nu, "book_average_rating": nr, "gross_sale": ns,
                 "tanggal_transaksi": str(ntgl)
             }).execute()
-            st.success("Data Tersimpan!")
+            st.success("Data Berhasil Disimpan!")
             st.cache_data.clear()
