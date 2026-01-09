@@ -52,7 +52,7 @@ def load_data():
 df_raw = load_data()
 
 # =========================================================
-# BAGIAN 1: PREDIKSI & AI INSIGHT (DI ATAS)
+# BAGIAN 1: PREDIKSI & AI INSIGHT
 # =========================================================
 st.title("📑 Bacakuy Sales Prediction & AI Analysis")
 col_p1, col_p2 = st.columns([1, 2])
@@ -74,12 +74,12 @@ with col_p2:
             resp = model_ai.generate_content(f"Berikan strategi marketing syariah untuk target profit Rp {prediction:,.0f}")
             st.success(resp.text)
         except:
-            st.warning("Insight AI Gagal (404).")
+            st.warning("Insight AI Gagal.")
 
 st.divider()
 
 # =========================================================
-# BAGIAN 2: STRATEGIC HUB (KPI & GRAFIK FILTER)
+# BAGIAN 2: STRATEGIC HUB
 # =========================================================
 st.title("🚀 Strategic Intelligence Hub")
 
@@ -103,41 +103,46 @@ if not df_raw.empty:
     k4.metric("Brand Loyalty", f"{df['book_average_rating'].mean():.2f}/5")
 
     # TABS GRAFIK
-    t1, t2, t3 = st.tabs(["📊 Performance Intelligence", "📈 Tren Penjualan", "🎯 Rating vs Market Popularity"])
+    t1, t2, t3, t4 = st.tabs(["📊 Performance", "📈 Monthly Trend", "🎯 Popularity", "✍️ Author Performance"])
     
     with t1:
-        st.subheader("Publisher & Sales Performance")
+        st.subheader("Publisher Performance")
         col_g1, col_g2 = st.columns(2)
         with col_g1:
-            st.write("**Top 5 Publisher (Revenue)**")
-            pub_revenue = df.groupby('publisher')['gross_sale'].sum().nlargest(5).reset_index()
-            st.bar_chart(data=pub_revenue, x='publisher', y='gross_sale', color="#D2B48C")
+            st.write("**Revenue by Publisher**")
+            pub_rev = df.groupby('publisher')['gross_sale'].sum().nlargest(5).reset_index()
+            st.bar_chart(data=pub_rev, x='publisher', y='gross_sale', color="#D2B48C")
         with col_g2:
-            st.write("**Units Sold by Publisher**")
-            pub_units = df.groupby('publisher')['units_sold'].sum().nlargest(5).reset_index()
-            st.bar_chart(data=pub_units, x='publisher', y='units_sold', color="#8B4513")
+            st.write("**Units by Publisher**")
+            pub_uni = df.groupby('publisher')['units_sold'].sum().nlargest(5).reset_index()
+            st.bar_chart(data=pub_uni, x='publisher', y='units_sold', color="#8B4513")
     
     with t2:
-        st.subheader("Operational Revenue Trend")
-        st.area_chart(df.reset_index()['gross_sale'], color="#A0522D")
+        st.subheader("Monthly Sales Trend")
+        # Mengelompokkan data berdasarkan Bulan dan Tahun (Bukan per ID lagi)
+        monthly_trend = df.groupby('bulan_tahun')['gross_sale'].sum().reset_index()
+        # Mengurutkan berdasarkan index asli agar urutan bulan benar
+        st.area_chart(data=monthly_trend.set_index('bulan_tahun'), color="#A0522D")
     
     with t3:
-        # PERBAIKAN: Chart Area untuk membandingkan Rating dan Units Sold
-        st.subheader("Rating vs Units Sold (Market Popularity)")
-        # Kita ambil rata-rata rating dan total unit terjual per genre untuk melihat korelasi popularitas
-        popularity_data = df.groupby('genre').agg({
-            'book_average_rating': 'mean',
-            'units_sold': 'sum'
-        }).reset_index()
-        
-        # Menampilkan perbandingan dalam satu grafik area
-        st.area_chart(data=popularity_data.set_index('genre'), color=["#5D4037", "#D2B48C"])
-        st.caption("Coklat Tua: Avg Rating | Coklat Muda: Total Units Sold")
+        st.subheader("Rating vs Market Popularity")
+        pop_data = df.groupby('genre').agg({'book_average_rating': 'mean', 'units_sold': 'sum'}).reset_index()
+        st.area_chart(data=pop_data.set_index('genre'), color=["#5D4037", "#D2B48C"])
+        st.caption("Coklat Tua: Rating | Coklat Muda: Units Sold")
+
+    with t4:
+        st.subheader("Top Performing Authors")
+        if 'author' in df.columns:
+            # Mengambil 10 Author dengan penjualan unit tertinggi
+            author_data = df.groupby('author')['units_sold'].sum().nlargest(10).reset_index()
+            st.bar_chart(data=author_data, x='author', y='units_sold', color="#5D4037")
+        else:
+            st.info("Kolom 'author' tidak ditemukan di database Supabase.")
 
 st.divider()
 
 # =========================================================
-# BAGIAN 3: DATABASE & TAMBAH DATA (DI PALING BAWAH)
+# BAGIAN 3: DATABASE & TAMBAH DATA
 # =========================================================
 st.title("📁 Database Management")
 tab_view, tab_add = st.tabs(["🗂️ View Table", "➕ Add Record"])
@@ -152,6 +157,7 @@ with tab_add:
         c1, c2 = st.columns(2)
         with c1:
             nt = st.text_input("Judul Buku")
+            na = st.text_input("Penulis (Author)") # Input baru untuk Author
             ng = st.selectbox("Genre", sorted(df_raw['genre'].unique()) if not df_raw.empty else ["Umum"])
             np = st.text_input("Publisher")
         with c2:
@@ -159,7 +165,12 @@ with tab_add:
             nr = st.number_input("Rating", 0.0, 5.0)
             ns = st.number_input("Gross Sale", min_value=0)
             ntgl = st.date_input("Tanggal Transaksi")
+        
         if st.form_submit_button("Simpan Data"):
-            supabase.table("bacakuy_sales").insert({"book_title": nt, "genre": ng, "publisher": np, "units_sold": nu, "book_average_rating": nr, "gross_sale": ns, "tanggal_transaksi": str(ntgl)}).execute()
+            supabase.table("bacakuy_sales").insert({
+                "book_title": nt, "author": na, "genre": ng, "publisher": np,
+                "units_sold": nu, "book_average_rating": nr, "gross_sale": ns,
+                "tanggal_transaksi": str(ntgl)
+            }).execute()
             st.success("Data Tersimpan!")
             st.cache_data.clear()
