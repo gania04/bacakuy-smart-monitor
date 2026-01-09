@@ -4,9 +4,8 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 import google.generativeai as genai
 from supabase import create_client
-from datetime import datetime
 
-# --- 1. CONFIG & THEME (Earthtone) ---
+# --- 1. CONFIG & THEME (Earthtone Coklat Cream) ---
 st.set_page_config(page_title="Bacakuy Intelligence PRO", layout="wide")
 
 st.markdown("""
@@ -40,12 +39,11 @@ def load_data():
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.'), errors='coerce')
         
-        # Konversi kolom tanggal (pastikan kolom 'created_at' atau 'date' ada di Supabase)
+        # Konversi kolom tanggal menjadi string untuk Dropdown
         if 'created_at' in df.columns:
-            df['date'] = pd.to_datetime(df['created_at']).dt.date
+            df['date_str'] = pd.to_datetime(df['created_at']).dt.strftime('%Y-%m-%d')
         else:
-            # Jika tidak ada kolom tanggal, buat tanggal dummy agar filter date tidak error
-            df['date'] = pd.to_datetime("2024-01-01").date()
+            df['date_str'] = "2024-01-01"
             
         return df.dropna(subset=['gross_sale']).reset_index(drop=True)
     except:
@@ -88,22 +86,21 @@ st.divider()
 st.title("🚀 Strategic Intelligence Hub")
 
 if not df_raw.empty:
-    # FILTER: Genre & Date Range (GANTI DARI TAHUN KE TANGGAL)
+    # FILTER: Genre & Date Dropdown (Sesuai Permintaan)
     f1, f2 = st.columns(2)
     with f1:
         sel_genre = st.selectbox("Pilih Genre:", ["Semua Genre"] + sorted(list(df_raw['genre'].unique())))
     with f2:
-        # Pemilih rentang tanggal
-        date_range = st.date_input("Pilih Rentang Tanggal:", 
-                                   [df_raw['date'].min(), df_raw['date'].max()])
+        # GANTI: Sekarang menggunakan Selectbox (Dropdown) bukan rentang
+        date_options = ["Semua Tanggal"] + sorted(list(df_raw['date_str'].unique()), reverse=True)
+        sel_date = st.selectbox("Pilih Tanggal:", date_options)
 
-    # Apply Filter
+    # Proses Filter
     df = df_raw.copy()
     if sel_genre != "Semua Genre":
         df = df[df['genre'] == sel_genre]
-    
-    if len(date_range) == 2:
-        df = df[(df['date'] >= date_range[0]) & (df['date'] <= date_range[1])]
+    if sel_date != "Semua Tanggal":
+        df = df[df['date_str'] == sel_date]
 
     # KPI Row
     k1, k2, k3, k4 = st.columns(4)
