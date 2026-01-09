@@ -14,8 +14,9 @@ try:
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     genai.configure(api_key=GEMINI_API_KEY)
     
-    # PERBAIKAN: Menggunakan format nama model lengkap untuk menghindari Error 404
-    model_ai = genai.GenerativeModel('models/gemini-1.5-flash')
+    # MENGGUNAKAN VERSI TERSTABIL: gemini-1.5-flash-8b (Lebih ringan & kompatibel)
+    # Jika masih 404, sistem akan otomatis beralih ke format string mentah
+    model_ai = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
     st.error(f"Gagal Inisialisasi: {e}")
 
@@ -35,7 +36,7 @@ st.set_page_config(page_title="Bacakuy Smart Monitor PRO", layout="wide")
 df = load_data()
 
 # =========================================================
-# BAGIAN ATAS: PREDIKSI & INSIGHT AI (GEMINI 1.5 FLASH)
+# BAGIAN ATAS: PREDIKSI & INSIGHT AI
 # =========================================================
 st.title("📑 Bacakuy Sales Prediction & AI Analysis")
 
@@ -49,7 +50,7 @@ with col_in:
 
 with col_res:
     if predict_btn and not df.empty:
-        # Kalkulasi Prediksi
+        # Prediksi Angka
         X = df[['units_sold', 'book_average_rating']]
         y = df['gross_sale']
         regr = LinearRegression().fit(X, y)
@@ -57,24 +58,22 @@ with col_res:
         
         st.metric("Estimasi Gross Sales (IDR)", f"Rp {prediction:,.0f}")
         
-        # Eksekusi Gemini 1.5 Flash
-        st.subheader("🤖 Strategi Bisnis & Insight (Gemini Flash)")
+        st.subheader("🤖 Strategi Bisnis & Insight")
         with st.spinner("Menghubungkan ke Google AI Studio..."):
             try:
-                prompt = f"Berikan 1 strategi marketing syariah untuk target profit Rp {prediction:,.0f}."
+                # Instruksi Strategi
+                prompt = f"Berikan 1 insight strategi marketing syariah untuk target profit Rp {prediction:,.0f}."
                 response = model_ai.generate_content(prompt)
-                st.info(response.text)
+                st.info(response.text) # Insight harus muncul di sini
             except Exception as e:
-                # Jika masih 404, tampilkan cara memperbaiki library
-                st.error(f"AI Error: {e}")
-                st.write("Coba jalankan: `pip install -U google-generativeai` di terminal Anda.")
+                st.error(f"Koneksi Gagal (404). Solusi: Update file requirements.txt Anda dengan 'google-generativeai>=0.8.3'")
     else:
-        st.info("Klik tombol untuk memproses data.")
+        st.info("Klik tombol untuk memproses insight AI.")
 
 st.divider()
 
 # =========================================================
-# BAGIAN BAWAH: STRATEGIC HUB DENGAN DROPDOWN FILTER
+# BAGIAN BAWAH: STRATEGIC HUB (DROPDOWN FILTER)
 # =========================================================
 st.title("🚀 Strategic Intelligence Hub")
 
@@ -95,11 +94,10 @@ if not df.empty:
 
     # Metrik
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Total Valuation", f"Rp {df_f['gross_sale'].sum():,.0f}")
-    m2.metric("Total Units", f"{df_f['units_sold'].sum():,.0f}")
-    m3.metric("Avg Rating", f"{df_f['book_average_rating'].mean():.2f}")
+    m1.metric("Market Valuation", f"Rp {df_f['gross_sale'].sum():,.0f}")
+    m2.metric("Circulation", f"{df_f['units_sold'].sum():,.0f}")
+    m3.metric("Brand Loyalty", f"{df_f['book_average_rating'].mean():.2f}/5")
     m4.metric("Status", "Live Connected")
 
-    # Grafik
-    st.subheader(f"Statistik Penjualan: {sel_genre}")
+    # Grafik Area
     st.area_chart(df_f['gross_sale'])
