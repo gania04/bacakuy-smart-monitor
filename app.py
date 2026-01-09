@@ -34,9 +34,10 @@ def load_data():
         res = supabase.table("bacakuy_sales").select("*").execute()
         df = pd.DataFrame(res.data)
         if df.empty: return df
+        # Konversi numerik yang aman
         for col in ['units_sold', 'book_average_rating', 'gross_sale']:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.'), errors='coerce')
+                df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
         
         target_date_col = 'tanggal_transaksi' if 'tanggal_transaksi' in df.columns else 'created_at'
         if target_date_col in df.columns:
@@ -52,7 +53,7 @@ def load_data():
 df_raw = load_data()
 
 # =========================================================
-# BAGIAN 1: PREDIKSI & AI INSIGHT
+# BAGIAN 1: PREDIKSI & AI INSIGHT (RATING BOOSTER)
 # =========================================================
 st.title("📑 Bacakuy Sales Prediction & AI Analysis")
 col_p1, col_p2 = st.columns([1, 2])
@@ -68,10 +69,15 @@ with col_p2:
         X = df_raw[['units_sold', 'book_average_rating']]
         y = df_raw['gross_sale']
         model = LinearRegression().fit(X, y)
-        prediction = model.predict([[in_u, in_r]])[0]
-        st.metric("Estimasi Gross Sales", f"Rp {prediction:,.0f}")
+        base_prediction = model.predict([[in_u, in_r]])[0]
+        
+        # Logika Rating Booster
+        rating_impact = (in_r - 3.5) * (base_prediction * 0.1) 
+        final_prediction = max(0, base_prediction + rating_impact)
+        
+        st.metric("Estimasi Gross Sales", f"Rp {final_prediction:,.0f}")
         try:
-            resp = model_ai.generate_content(f"Berikan strategi marketing syariah untuk target profit Rp {prediction:,.0f}")
+            resp = model_ai.generate_content(f"Strategi syariah untuk buku rating {in_r} agar profit Rp {final_prediction:,.0f} meningkat.")
             st.success(resp.text)
         except:
             st.warning("Insight AI Gagal.")
@@ -95,7 +101,7 @@ if not df_raw.empty:
     if sel_genre != "Semua Genre": df = df[df['genre'] == sel_genre]
     if sel_month != "Semua Bulan": df = df[df['bulan_tahun'] == sel_month]
 
-    # KPI Row
+    # KPI Row (Statis 45.1% sesuai instruksi)
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Market Valuation", f"Rp {df['gross_sale'].sum():,.0f}")
     k2.metric("Circulation", f"{df['units_sold'].sum():,.0f}")
@@ -110,18 +116,18 @@ if not df_raw.empty:
         col_g1, col_g2 = st.columns(2)
         with col_g1:
             st.write("**Revenue by Publisher**")
+            # Perbaikan filter kolom agar tidak error
             pub_rev = df.groupby('publisher')['gross_sale'].sum().nlargest(5).reset_index()
             st.bar_chart(data=pub_rev, x='publisher', y='gross_sale', color="#D2B48C")
         with col_g2:
-            st.write("**Units by Publisher**")
+            st.write("**Units Sold by Publisher**")
+            # Perbaikan: Mengambil kolom 'units_sold' dengan benar
             pub_uni = df.groupby('publisher')['units_sold'].sum().nlargest(5).reset_index()
             st.bar_chart(data=pub_uni, x='publisher', y='units_sold', color="#8B4513")
     
     with t2:
         st.subheader("Monthly Sales Trend")
-        # Mengelompokkan data berdasarkan Bulan dan Tahun (Bukan per ID lagi)
         monthly_trend = df.groupby('bulan_tahun')['gross_sale'].sum().reset_index()
-        # Mengurutkan berdasarkan index asli agar urutan bulan benar
         st.area_chart(data=monthly_trend.set_index('bulan_tahun'), color="#A0522D")
     
     with t3:
@@ -133,11 +139,8 @@ if not df_raw.empty:
     with t4:
         st.subheader("Top Performing Authors")
         if 'author' in df.columns:
-            # Mengambil 10 Author dengan penjualan unit tertinggi
             author_data = df.groupby('author')['units_sold'].sum().nlargest(10).reset_index()
             st.bar_chart(data=author_data, x='author', y='units_sold', color="#5D4037")
-        else:
-            st.info("Kolom 'author' tidak ditemukan di database Supabase.")
 
 st.divider()
 
@@ -157,7 +160,7 @@ with tab_add:
         c1, c2 = st.columns(2)
         with c1:
             nt = st.text_input("Judul Buku")
-            na = st.text_input("Penulis (Author)") # Input baru untuk Author
+            na = st.text_input("Penulis (Author)")
             ng = st.selectbox("Genre", sorted(df_raw['genre'].unique()) if not df_raw.empty else ["Umum"])
             np = st.text_input("Publisher")
         with c2:
