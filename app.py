@@ -5,25 +5,53 @@ from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import LabelEncoder
 from supabase import create_client
 
-# --- 1. CONFIG & THEME ---
+# --- 1. CONFIG & THEME (Optimasi Kontras & Mobile) ---
 st.set_page_config(page_title="Bacakuy Intelligence Hub", layout="wide")
 
 st.markdown("""
     <style>
-    .main { background-color: #FDF5E6; }
+    /* Menggunakan transparansi agar adaptif terhadap Dark/Light Mode */
+    .stApp {
+        background-color: transparent;
+    }
+    
+    /* Box Metriks yang adaptif */
     .stMetric { 
-        background-color: #FFFFFF; padding: 20px; border-radius: 15px; 
-        border-left: 5px solid #8B4513; box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
+        background-color: rgba(139, 69, 19, 0.05); 
+        padding: 20px; 
+        border-radius: 15px; 
+        border-left: 5px solid #8B4513; 
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
     }
-    h1, h2, h3 { color: #5D4037; font-family: 'Trebuchet MS'; }
-    .stButton>button { background-color: #8B4513; color: white; border-radius: 10px; width: 100%; }
+
+    /* Judul menggunakan warna default sistem agar otomatis ganti warna sesuai tema */
+    h1, h2, h3 { 
+        font-family: 'Trebuchet MS', sans-serif; 
+    }
+
+    /* Memastikan tombol selalu kontras dengan teks putih */
+    .stButton>button { 
+        background-color: #8B4513 !important; 
+        color: white !important; 
+        border-radius: 10px; 
+        width: 100%;
+        border: none;
+    }
+
+    /* Box Confidence dengan warna yang lebih cerah agar terbaca di Dark Mode */
     .confidence-box {
-        padding: 15px; border-radius: 12px; text-align: center; font-weight: bold;
-        border: 2px solid; margin-top: 10px; font-size: 18px;
+        padding: 15px; 
+        border-radius: 12px; 
+        text-align: center; 
+        font-weight: bold;
+        border: 2px solid; 
+        margin-top: 10px; 
+        font-size: 18px;
     }
-    .profit-box {
-        background-color: #E8F5E9; padding: 15px; border-radius: 12px;
-        border: 1px solid #2E7D32; color: #1B5E20; font-weight: bold;
+
+    /* Memperbaiki jarak pada perangkat mobile */
+    @media (max-width: 640px) {
+        .stMetric { margin-bottom: 10px; }
     }
     </style>
     """, unsafe_allow_html=True)
@@ -75,26 +103,23 @@ with col_p1:
 
 with col_p2:
     if btn_predict:
-        # 1. HITUNGAN FINANSIAL
         final_gross = in_u * in_p
         total_cost = in_u * in_c
         final_profit = final_gross - total_cost
         margin = (final_profit / final_gross * 100) if final_gross > 0 else 0
         
-        # 2. MARKET DEMAND
         avg_demand = df_raw[df_raw['genre'] == in_g]['units_sold'].mean() if not df_raw.empty else 0
         demand_status = "Tinggi" if in_u <= avg_demand else "Menantang"
         
-        # TAMPILAN METRIK
         m1, m2, m3 = st.columns(3)
         m1.metric("Gross Sale", f"$ {final_gross:,.2f}")
-        m2.metric("Net Profit (Laba)", f"$ {final_profit:,.2f}", f"{margin:.1f}% Margin")
+        m2.metric("Net Profit", f"$ {final_profit:,.2f}", f"{margin:.1f}% Margin")
         m3.metric("Market Demand", demand_status)
 
-        # STATUS KUALITAS
-        if in_r >= 4.5: c_lab, c_col = "EXCELLENT", "#2E7D32"
-        elif in_r >= 3.5: c_lab, c_col = "GOOD", "#F9A825"
-        else: c_lab, c_col = "AT RISK", "#C62828"
+        # Penyesuaian warna status agar tetap kontras
+        if in_r >= 4.5: c_lab, c_col = "EXCELLENT", "#2E7D32" # Hijau
+        elif in_r >= 3.5: c_lab, c_col = "GOOD", "#D4A017"    # Kuning Emas (lebih terbaca di Dark Mode)
+        else: c_lab, c_col = "AT RISK", "#D32F2F"           # Merah
 
         st.markdown(f"""
             <div class="confidence-box" style="background-color: {c_col}22; border-color: {c_col}; color: {c_col};">
@@ -102,12 +127,12 @@ with col_p2:
             </div>
         """, unsafe_allow_html=True)
         
-        st.info(f"💡 Dari total Gross Sale ${final_gross:,.2f}, Anda mendapatkan laba bersih ${final_profit:,.2f} setelah dipotong modal ${total_cost:,.2f}.")
+        st.info(f"💡 Dari total Gross Sale ${final_gross:,.2f}, laba bersih Anda adalah ${final_profit:,.2f} (Modal: ${total_cost:,.2f}).")
 
 st.divider()
 
 # =========================================================
-# BAGIAN 2: STRATEGIC HUB (STRUKTUR TETAP)
+# BAGIAN 2: STRATEGIC HUB
 # =========================================================
 st.title("🚀 Strategic Intelligence Hub")
 
@@ -124,12 +149,11 @@ if not df_raw.empty:
     if sel_month != "Semua Bulan": df = df[df['bulan_tahun'] == sel_month]
 
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Market Valuation (Gross Sale)", f"$ {df['gross_sale'].sum():,.2f}")
+    k1.metric("Market Valuation", f"$ {df['gross_sale'].sum():,.2f}")
     k2.metric("Circulation", f"{df['units_sold'].sum():,.0f} Units")
-    k3.metric("Profitability Index", "45.1%", "Rev/Gross")
+    k3.metric("Profitability Index", "45.1%")
     k4.metric("Brand Loyalty", f"{df['book_average_rating'].mean():.2f}/5")
 
-    # TABS GRAFIK
     t1, t2, t3, t4 = st.tabs(["📊 Performance", "📈 Monthly Trend", "🎯 Popularity", "✍️ Author"])
     
     with t1:
@@ -138,7 +162,7 @@ if not df_raw.empty:
         with col_g1:
             st.write("**Gross Sale by Publisher ($)**")
             pub_rev = df.groupby('publisher')['gross_sale'].sum().nlargest(5).reset_index()
-            st.bar_chart(data=pub_rev, x='publisher', y='gross_sale', color="#D2B48C")
+            st.bar_chart(data=pub_rev, x='publisher', y='gross_sale', color="#A8763E")
         with col_g2:
             st.write("**Units Sold by Publisher**")
             pub_uni = df.groupby('publisher')['units_sold'].sum().nlargest(5).reset_index()
@@ -147,12 +171,12 @@ if not df_raw.empty:
     with t2:
         st.subheader("Monthly Gross Sale Trend ($)")
         monthly_trend = df.groupby('bulan_tahun')['gross_sale'].sum().reset_index()
-        st.area_chart(data=monthly_trend.set_index('bulan_tahun'), color="#A0522D")
+        st.area_chart(data=monthly_trend.set_index('bulan_tahun'), color="#BC8F8F")
     
     with t3:
         st.subheader("Rating vs Market Popularity")
         pop_data = df.groupby('genre').agg({'book_average_rating': 'mean', 'units_sold': 'sum'}).reset_index()
-        st.area_chart(data=pop_data.set_index('genre'), color=["#5D4037", "#D2B48C"])
+        st.area_chart(data=pop_data.set_index('genre'), color=["#8B4513", "#D2B48C"])
 
     with t4:
         st.subheader("Top Performing Authors")
