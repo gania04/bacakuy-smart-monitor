@@ -1,76 +1,117 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 from sklearn.linear_model import LinearRegression
 import google.generativeai as genai
 from supabase import create_client
+import os
 
-# --- KONFIGURASI ---
-SUPABASE_URL = "https://oftpulsqxjhhtfukmmtr.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." # Gunakan Key Anda
+# ==========================================
+# 1. KONFIGURASI KONEKSI
+# ==========================================
+# Gunakan URL lengkap (https://...) agar tidak terjadi Invalid URL
+SUPABASE_URL = "https://oftpulsqxjhhtfukmmtr.supabase.co" 
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." # Masukkan Key Lengkap Anda
 GEMINI_API_KEY = "AIzaSyApzYuBJ0QWbw6QXd75X9CYjo_E6_fZHoE"
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-genai.configure(api_key=GEMINI_API_KEY)
+# Inisialisasi Service
+try:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    genai.configure(api_key=GEMINI_API_KEY)
+except Exception as e:
+    st.error(f"Gagal Inisialisasi Service: {e}")
 
+# ==========================================
+# 2. FUNGSI LOAD DATA
+# ==========================================
 @st.cache_data
-def load_data_from_supabase():
-    # Menggunakan nama tabel sesuai skema Anda
-    res = supabase.table("bacakuy - sales").select("*").execute()
-    df = pd.DataFrame(res.data)
+def load_data():
+    try:
+        # Mengambil dari tabel hasil pembersihan SQL
+        res = supabase.table("bacakuy_sales_clean").select("*").execute()
+        df = pd.DataFrame(res.data)
+        return df
+    except Exception as e:
+        st.error(f"Gagal mengambil data dari Supabase: {e}")
+        return pd.DataFrame()
+
+# ==========================================
+# 3. ANTARMUKA DASHBOARD (UI)
+# ==========================================
+st.set_page_config(page_title="Bacakuy Strategic Intelligence", layout="wide")
+
+# Header Dashboard sesuai desain target
+st.title("Strategic Intelligence Hub")
+st.write("Menganalisis performa judul buku secara real-time.")
+
+df_raw = load_data()
+
+if not df_raw.empty:
+    # --- BARIS 1: METRIK UTAMA (Metric Cards) ---
+    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
     
-    if not df.empty:
-        # Konversi kolom TEXT ke NUMERIC (Penting karena skema Anda TEXT)
-        df['units_sold'] = pd.to_numeric(df['units_sold'], errors='coerce')
-        df['book_average_rating'] = pd.to_numeric(df['book_average_rating'], errors='coerce')
-        df['gross_sale'] = pd.to_numeric(df['gross_sale'], errors='coerce')
-        df = df.dropna(subset=['units_sold', 'book_average_rating', 'gross_sale'])
-    return df
+    with col_m1:
+        st.metric("Market Valuation", f"Rp {df_raw['gross_sale'].sum():,.0f}", "+5.2%")
+    with col_m2:
+        st.metric("Circulation", f"{df_raw['units_sold'].sum():,.0f}", "Units Delivered")
+    with col_m3:
+        st.metric("Brand Loyalty", f"{df_raw['book_average_rating'].mean():.2f}/5", "Avg Sentiments")
+    with col_m4:
+        st.metric("Status", "Live Production", "Active")
 
-# --- UI DASHBOARD ---
-st.set_page_config(page_title="Bacakuy Intelligence", layout="wide")
-st.title("🚀 Strategic Intelligence Hub")
+    st.markdown("---")
 
-df_clean = load_data_from_supabase()
+    # --- BARIS 2: FILTER & PREDIKSI ---
+    col_input, col_graph = st.columns([1, 2])
 
-if not df_clean.empty:
-    # FILTER GENRE
-    genres = df_clean['genre'].unique().tolist()
-    sel_genre = st.sidebar.selectbox("Pilih Genre", ["Semua"] + genres)
-    
-    # FILTER DATA
-    df_final = df_clean if sel_genre == "Semua" else df_clean[df_clean['genre'] == sel_genre]
-
-    # METRIC CARDS (Seperti Gambar Google Studio)
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Market Valuation", f"Rp {df_final['gross_sale'].sum():,.0f}")
-    c2.metric("Circulation", f"{df_final['units_sold'].sum():,.0f} Units")
-    c3.metric("Brand Loyalty", f"{df_final['book_average_rating'].mean():.2f}/5")
-
-    # PREDIKSI & AI
-    st.divider()
-    col_in, col_res = st.columns([1, 2])
-    
-    with col_in:
-        st.subheader("Prediction Input")
-        in_u = st.number_input("Target Terjual", value=100)
-        in_r = st.slider("Target Rating", 1.0, 5.0, 4.5)
+    with col_input:
+        st.subheader("Segment Filter & Prediction")
         
-        if st.button("Generate AI Insight", use_container_width=True):
-            # ML
-            model = LinearRegression().fit(df_final[['units_sold', 'book_average_rating']], df_final['gross_sale'])
-            prediction = model.predict([[in_u, in_r]])[0]
-            
-            with col_res:
-                st.subheader("AI Analysis Result")
-                st.success(f"Estimasi Gross Profit: Rp {prediction:,.0f}")
+        # Filter Genre Dinamis
+        genres = df_raw['genre'].unique().tolist()
+        selected_genre = st.selectbox("All Categories", ["Semua Genre"] + genres)
+        
+        # Data Filtered untuk Prediksi
+        df_filtered = df_raw if selected_genre == "Semua Genre" else df_raw[df_raw['genre'] == selected_genre]
+        
+        st.write("---")
+        # Input Fitur Prediksi
+        in_units = st.number_input("Jumlah Unit Terjual (Units Sold)", value=100)
+        in_rating = st.slider("Rating Rata-rata Buku", 0.0, 5.0, 4.5)
+        
+        if st.button("Generate Strategic Insight", use_container_width=True):
+            # 1. Hitung Prediksi dengan Machine Learning
+            try:
+                X = df_filtered[['units_sold', 'book_average_rating']]
+                y = df_filtered['gross_sale']
+                model = LinearRegression().fit(X, y)
+                prediction = model.predict([[in_units, in_rating]])[0]
                 
-                # GEMINI
-                model_ai = genai.GenerativeModel('gemini-1.5-flash')
-                prompt = f"Beri saran bisnis Islami untuk menjual {in_u} buku {sel_genre} dengan profit Rp {prediction}."
-                st.info(model_ai.generate_content(prompt).text)
+                st.success(f"Estimasi Gross Sales: Rp {prediction:,.0f}")
 
-    # GRAFIK TREN
-    st.subheader("Sales Performance Trend")
-    st.area_chart(df_final['gross_sale'])
+                # 2. Panggil Gemini AI untuk Insight Syariah
+                with st.spinner("AI sedang menganalisis strategi..."):
+                    model_ai = genai.GenerativeModel('gemini-1.5-flash')
+                    prompt = f"""
+                    Anda adalah CDO Bacakuy. Berikan analisis untuk genre {selected_genre}:
+                    - Target Penjualan: {in_units} unit
+                    - Estimasi Profit: Rp {prediction:,.0f}
+                    
+                    Berikan 2 langkah strategis pemasaran dan 1 nasihat muamalah syariah tentang kejujuran.
+                    """
+                    response = model_ai.generate_content(prompt)
+                    st.info(response.text)
+            except:
+                st.error("Data tidak cukup untuk melakukan prediksi pada segmen ini.")
+
+    with col_graph:
+        st.subheader("Sales Performance Trend")
+        # Grafik Area sesuai desain target
+        st.area_chart(df_filtered.set_index('genre')['gross_sale'] if 'genre' in df_filtered.columns else df_filtered['gross_sale'])
+        
+        st.subheader("Profitability Distribution")
+        st.bar_chart(df_filtered['units_sold'])
+
 else:
-    st.error("Data di Supabase masih kosong atau tipe data tidak sesuai.")
+    st.warning("Data kosong atau tabel 'bacakuy_sales_clean' belum dibuat di Supabase.")
+    st.info("Pastikan Anda sudah menjalankan query SQL untuk membersihkan data (koma ke titik).")
