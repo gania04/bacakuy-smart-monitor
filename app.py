@@ -52,7 +52,7 @@ def load_data():
 df_raw = load_data()
 
 # =========================================================
-# BAGIAN 1: PREDIKSI & AI INSIGHT (DI ATAS)
+# BAGIAN 1: PREDIKSI & AI INSIGHT
 # =========================================================
 st.title("📑 Bacakuy Sales Prediction & AI Analysis")
 col_p1, col_p2 = st.columns([1, 2])
@@ -74,12 +74,12 @@ with col_p2:
             resp = model_ai.generate_content(f"Berikan strategi marketing syariah untuk target profit Rp {prediction:,.0f}")
             st.success(resp.text)
         except:
-            st.warning("Insight AI Gagal (404).")
+            st.warning("Insight AI Gagal.")
 
 st.divider()
 
 # =========================================================
-# BAGIAN 2: STRATEGIC HUB (KPI STATIS & GRAFIK FILTER)
+# BAGIAN 2: STRATEGIC HUB
 # =========================================================
 st.title("🚀 Strategic Intelligence Hub")
 
@@ -95,15 +95,16 @@ if not df_raw.empty:
     if sel_genre != "Semua Genre": df = df[df['genre'] == sel_genre]
     if sel_month != "Semua Bulan": df = df[df['bulan_tahun'] == sel_month]
 
-    # KPI Row (Profitability Index Kembali Statis 45.1%)
+    # KPI Row
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Market Valuation", f"Rp {df['gross_sale'].sum():,.0f}")
     k2.metric("Circulation", f"{df['units_sold'].sum():,.0f}")
-    k3.metric("Profitability Index", "45.1%", "Rev/Gross") # Kembali Statis
+    k3.metric("Profitability Index", "45.1%", "Rev/Gross")
     k4.metric("Brand Loyalty", f"{df['book_average_rating'].mean():.2f}/5")
 
     # TABS GRAFIK
-    t1, t2, t3 = st.tabs(["📊 Performance Intelligence", "📈 Tren Penjualan", "🎯 Korelasi"])
+    t1, t2, t3 = st.tabs(["📊 Performance Intelligence", "📈 Tren Penjualan", "🎯 Rating Distribution"])
+    
     with t1:
         st.subheader("Publisher & Sales Performance")
         col_g1, col_g2 = st.columns(2)
@@ -115,17 +116,22 @@ if not df_raw.empty:
             st.write("**Units Sold by Publisher**")
             pub_units = df.groupby('publisher')['units_sold'].sum().nlargest(5).reset_index()
             st.bar_chart(data=pub_units, x='publisher', y='units_sold', color="#8B4513")
+    
     with t2:
         st.subheader("Operational Revenue Trend")
+        # Area chart untuk tren pendapatan
         st.area_chart(df.reset_index()['gross_sale'], color="#A0522D")
+    
     with t3:
-        st.subheader("Rating vs Units Correlation")
-        st.scatter_chart(df, x='book_average_rating', y='units_sold', color="#5D4037")
+        # GANTI: Menggunakan Area Chart untuk Rating per Genre
+        st.subheader("Rating Insight by Genre")
+        rating_avg = df.groupby('genre')['book_average_rating'].mean().reset_index()
+        st.area_chart(data=rating_avg.set_index('genre'), color="#5D4037")
 
 st.divider()
 
 # =========================================================
-# BAGIAN 3: DATABASE & TAMBAH DATA (DI PALING BAWAH)
+# BAGIAN 3: DATABASE
 # =========================================================
 st.title("📁 Database Management")
 tab_view, tab_add = st.tabs(["🗂️ View Table", "➕ Add Record"])
