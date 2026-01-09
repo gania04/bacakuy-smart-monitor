@@ -4,17 +4,16 @@ from sklearn.linear_model import LinearRegression
 import google.generativeai as genai
 from supabase import create_client
 
-# --- 1. KREDENSIAL ---
+# --- 1. KONFIGURASI ---
 SUPABASE_URL = "https://oftpulsqxjhhtfukmmtr.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9mdHB1bHNxeGpoaHRmdWttbXRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1NzAwNjksImV4cCI6MjA4MTE0NjA2OX0.aDLgRF2mzaJEW43h2hmZOBadEnDtUoRTZCueJHdfh04"
-# API Key Google AI Studio Anda
 GEMINI_API_KEY = "AIzaSyApzYuBJ0QWbw6QXd75X9CYjo_E6_fZHoE"
 
-# Inisialisasi Service dengan penanganan error 404
+# Inisialisasi Service
 try:
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     genai.configure(api_key=GEMINI_API_KEY)
-    # Menggunakan model 'gemini-1.5-flash' yang mendukung generateContent
+    # Gunakan model ini untuk stabilitas koneksi
     model_ai = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
     st.error(f"Gagal Inisialisasi: {e}")
@@ -22,115 +21,103 @@ except Exception as e:
 @st.cache_data
 def load_data():
     try:
-        # Nama tabel diperbaiki menjadi bacakuy_sales tanpa spasi
+        # Menghubungkan ke tabel bacakuy_sales
         res = supabase.table("bacakuy_sales").select("*").execute()
         df = pd.DataFrame(res.data)
-        # Normalisasi angka koma ke titik
         for col in ['book_average_rating', 'gross_sale']:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.replace(',', '.').astype(float)
         return df
-    except Exception as e:
-        st.error(f"Gagal koneksi database: {e}")
+    except:
         return pd.DataFrame()
 
-# --- SETUP TAMPILAN ---
 st.set_page_config(page_title="Bacakuy Smart Monitor PRO", layout="wide")
 df = load_data()
 
 # =========================================================
-# BAGIAN ATAS: KALKULATOR PREDIKSI & AI STRATEGY
+# BAGIAN ATAS: KALKULATOR PREDIKSI & ANALISIS AI
 # =========================================================
-st.title("📑 Bacakuy Sales Prediction & Islamic Strategy AI")
-st.write("Prediksi profit masa depan dan dapatkan insight strategi bisnis syariah.")
-
+st.title("📑 Bacakuy Sales Prediction & AI Analysis")
 col_in, col_res = st.columns([1, 2])
 
 with col_in:
-    st.subheader("🔍 Input Fitur Prediksi")
-    in_units = st.number_input("Jumlah Unit Terjual (Units)", value=100)
-    in_rating = st.slider("Rating Rata-rata Buku", 0.0, 5.0, 4.0)
-    predict_btn = st.button("Prediksi Sekarang", use_container_width=True)
+    st.subheader("🔍 Input Data")
+    in_units = st.number_input("Unit Terjual", value=100)
+    in_rating = st.slider("Rating Buku", 0.0, 5.0, 4.0)
+    predict_btn = st.button("Aktifkan Analisis AI", use_container_width=True)
 
 with col_res:
     if predict_btn and not df.empty:
-        # Perhitungan Prediksi (Linear Regression)
+        # Prediksi Angka
         X = df[['units_sold', 'book_average_rating']]
         y = df['gross_sale']
         model_lr = LinearRegression().fit(X, y)
         prediction = model_lr.predict([[in_units, in_rating]])[0]
         
-        st.subheader("📊 Hasil Prediksi Penjualan")
-        st.metric("Estimasi Gross Sales (IDR)", f"Rp {prediction:,.0f}")
+        st.metric("Estimasi Gross Sales", f"Rp {prediction:,.0f}")
         
-        # Eksekusi AI Gemini
-        st.subheader("☪️ Analisis Strategi Bisnis Syariah (AI)")
-        with st.spinner("AI sedang merancang strategi..."):
+        # Analisis AI
+        st.subheader("🤖 Hasil Analisis Strategi AI")
+        with st.spinner("Menghubungkan ke Google AI Studio..."):
             try:
-                prompt = f"Berikan strategi pemasaran syariah yang jujur untuk buku dengan potensi profit Rp {prediction:,.0f}."
+                prompt = f"Berikan strategi bisnis singkat untuk penjualan buku dengan potensi Rp {prediction:,.0f}."
                 response = model_ai.generate_content(prompt)
                 st.info(response.text)
             except Exception as e:
-                st.error(f"Koneksi AI Gagal: {e}. Pastikan API Key di Google AI Studio aktif.")
+                st.error(f"AI masih gagal terhubung. Detail: {e}")
     else:
-        st.info("Klik 'Prediksi Sekarang' untuk melihat hasil.")
+        st.info("Silakan masukkan data dan klik tombol untuk analisis.")
 
 st.divider()
 
 # =========================================================
-# BAGIAN TENGAH: STRATEGIC INTELLIGENCE HUB (METRIK UTAMA)
+# BAGIAN TENGAH: STRATEGIC INTELLIGENCE (METRIK)
 # =========================================================
 st.title("🚀 Strategic Intelligence Hub")
 if not df.empty:
     m1, m2, m3, m4 = st.columns(4)
-    # Metrik real-time sesuai desain
-    m1.metric("Market Valuation", f"Rp {df['gross_sale'].sum():,.0f}", "+5.2%")
-    m2.metric("Circulation", f"{df['units_sold'].sum():,.0f}", "Units Delivered")
-    m3.metric("Brand Loyalty", f"{df['book_average_rating'].mean():.2f}/5", "Avg Sentiments")
-    m4.metric("Status", "Live Production", "Active")
+    m1.metric("Total Sales", f"Rp {df['gross_sale'].sum():,.0f}")
+    m2.metric("Total Units", f"{df['units_sold'].sum():,.0f}")
+    m3.metric("Avg Rating", f"{df['book_average_rating'].mean():.2f}")
+    m4.metric("Status", "Live Connected")
 
 st.divider()
 
 # =========================================================
-# BAGIAN BAWAH: ANALYTICS DENGAN FILTER DROPDOWN
+# BAGIAN BAWAH: GOOGLE AI STUDIO INTERFACE & DROPDOWN FILTER
 # =========================================================
-st.title("🤖 Performance Analytics & Filter Hub")
+st.title("📟 Google AI Studio & Analytics")
 col_side, col_main = st.columns([1, 3])
 
 with col_side:
-    st.write("⚙️ **Dropdown Filter**")
-    # Filter pilihan ke bawah (Dropdown)
-    genre_list = ["Semua Kategori"] + sorted(list(df['genre'].unique()))
-    selected_genre = st.selectbox("Pilih Genre Buku:", genre_list)
+    st.write("⚙️ **Filters**")
+    # Filter Genre Dropdown (Pilihan ke bawah)
+    genre_opt = ["Semua Genre"] + sorted(list(df['genre'].unique()))
+    sel_genre = st.selectbox("Pilih Genre:", genre_opt)
     
-    rating_list = [0.0, 1.0, 2.0, 3.0, 4.0, 4.5, 5.0]
-    selected_min_rating = st.selectbox("Minimal Rating Buku:", rating_list, index=0)
+    # Filter Rating Dropdown
+    sel_rating = st.selectbox("Minimal Rating:", [0.0, 3.0, 4.0, 4.5, 5.0])
     
-    st.divider()
-    st.button("Analyze Author Performance", use_container_width=True)
-    st.button("Track Profitability", use_container_width=True)
+    st.write("---")
+    st.write("**AI Studio Mode:**")
+    st.caption("Active: Gemini 1.5 Flash")
 
-# Logika Filter
-df_final = df.copy()
-if selected_genre != "Semua Kategori":
-    df_final = df_final[df_final['genre'] == selected_genre]
-df_final = df_final[df_final['book_average_rating'] >= selected_min_rating]
+# Logika Filter Data
+df_f = df.copy()
+if sel_genre != "Semua Genre":
+    df_f = df_f[df_f['genre'] == sel_genre]
+df_f = df_f[df_f['book_average_rating'] >= sel_rating]
 
 with col_main:
-    tab1, tab2, tab3 = st.tabs(["Monthly Trend", "Units Distribution", "Correlation Analysis"])
+    # Grafik yang berubah sesuai filter dropdown
+    st.subheader(f"Statistik Penjualan: {sel_genre}")
+    st.area_chart(df_f['gross_sale'])
     
-    with tab1:
-        st.subheader(f"Trend Penjualan: {selected_genre}")
-        # Area chart sesuai Operational Trends
-        st.area_chart(df_final['gross_sale'])
-        
-    with tab2:
-        st.subheader("Units Sold per Genre")
-        # Bar chart horizontal
-        genre_summary = df_final.groupby('genre')['units_sold'].sum()
-        st.bar_chart(genre_summary, horizontal=True)
-        
-    with tab3:
-        st.subheader("Korelasi Rating vs Popularitas")
-        # Scatter chart Market Popularity
-        st.scatter_chart(df_final[['book_average_rating', 'units_sold']])
+    # Bagian Chat AI Studio (Asisten Kode)
+    user_ask = st.text_input("Tanya AI Studio (Contoh: Bagaimana cara optimasi tabel?)")
+    if user_ask:
+        try:
+            res_studio = model_ai.generate_content(user_ask)
+            st.write(f"**AI Studio:** {res_studio.text}")
+        except:
+            st.warning("Chat AI Studio sedang sibuk.")
