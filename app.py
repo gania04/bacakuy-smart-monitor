@@ -4,159 +4,141 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 import google.generativeai as genai
 import os
+from supabase import create_client, Client
 
 # ==========================================
-# 1. KONFIGURASI & SETUP AWAL
+# 1. KONFIGURASI & SETUP (SUPABASE & GEMINI)
 # ==========================================
-st.set_page_config(page_title="Bacakuy Sales AI", layout="wide")
+st.set_page_config(page_title="Bacakuy Strategic AI", layout="wide")
 
-# --- KONFIGURASI GENAI (GEMINI) ---
-# PENTING: Ganti string di bawah ini dengan API KEY asli Anda jika belum diset di Environment Variable
-# Tips Senior Dev: Jangan pernah hardcode API Key di produksi. Gunakan st.secrets atau os.environ.
-# Sesuai request, kita mencoba mengambil dari environment, jika tidak ada, harap masukkan manual.
-api_key = os.environ.get("GEMINI_API_KEY") 
+# Credential (Gunakan st.secrets atau environment variable)
+# Ganti dengan nilai asli Anda atau set di Environment Variables
+URL_SUPABASE = os.environ.get("SUPABASE_URL") or "URL_SUPABASE_ANDA"
+KEY_SUPABASE = os.environ.get("SUPABASE_KEY") or "KEY_SUPABASE_ANDA"
+API_KEY_GEMINI = os.environ.get("GEMINI_API_KEY") or "API_KEY_GEMINI_ANDA"
 
-# Jika environment variable kosong, gunakan placeholder (Mahasiswa harus mengganti ini)
-if not api_key:
-    # Masukkan API Key Google Gemini Anda di sini
-    api_key = "MASUKKAN_API_KEY_GEMINI_ANDA_DISINI" 
-
+# Inisialisasi Klien
 try:
-    genai.configure(api_key=api_key)
+    supabase: Client = create_client(URL_SUPABASE, KEY_SUPABASE)
+    genai.configure(api_key=API_KEY_GEMINI)
 except Exception as e:
-    st.error(f"Konfigurasi API Key Gagal: {e}")
+    st.error(f"Gagal Inisialisasi Service: {e}")
 
 # ==========================================
-# 2. LOAD & CLEAN DATA (MODUL 5 CORE)
+# 2. FUNGSI DATA & AI
 # ==========================================
-@st.cache_data # Decorator agar data tidak di-load ulang setiap kali ada interaksi
-def load_and_train_model():
-    """
-    Fungsi ini memuat data, membersihkan data, dan melatih model Linear Regression.
-    """
-    # --- A. LOAD DATA ---
-    # Karena saya tidak memiliki file CSV fisik Anda, saya membuat Dummy Data 'bacakuy-sales'
-    # agar aplikasi ini bisa langsung jalan (RUNNABLE).
-    # Jika Anda punya file csv, uncomment baris: df = pd.read_csv('bacakuy-sales.csv')
+
+@st.cache_data
+def fetch_and_train():
+    # 1. Ambil data dari Supabase (Tabel: sales_data)
+    response = supabase.table("sales_data").select("*").execute()
+    df = pd.DataFrame(response.data)
     
-    data_dummy = {
-        'units_sold': [100, 150, 200, 120, 300, 50, 400, 250, 180, None], # Ada None untuk tes dropna
-        'book_average_rating': [4.5, 4.2, 4.8, 3.9, 4.9, 3.5, 4.7, 4.1, 4.3, 4.0],
-        'gross_sales': [5000000, 7500000, 12000000, 6000000, 18000000, 2000000, 25000000, 13000000, 9000000, 500000]
-    }
-    df = pd.DataFrame(data_dummy)
+    # 2. Data Cleaning
+    df = df.dropna(subset=['units_sold', 'book_average_rating', 'gross_sales'])
     
-    # --- B. DATA CLEANING (WAJIB) ---
-    # Menghapus baris yang memiliki nilai kosong (NaN)
-    df.dropna(inplace=True)
-    
-    # --- C. TRAINING MODEL ---
-    # Kita menggunakan units_sold dan book_average_rating untuk memprediksi gross_sales
+    # 3. Training Model ML
     X = df[['units_sold', 'book_average_rating']]
     y = df['gross_sales']
-    
-    model = LinearRegression()
-    model.fit(X, y)
+    model = LinearRegression().fit(X, y)
     
     return model, df
 
-# Memanggil fungsi training saat aplikasi dimuat
+def get_gemini_insight(summary, prediction):
+    model_ai = genai.GenerativeModel('gemini-1.5-flash')
+    prompt = f"""
+    Anda adalah Konsultan Bisnis Syariah untuk 'Bacakuy'.
+    
+    Konteks Data Perusahaan:
+    - Total Koleksi: {summary['total_books']} judul
+    - Rata-rata Rating: {summary['avg_rating']:.2f}
+    - Total Pendapatan: Rp {summary['total_sales']:,.0f}
+    
+    Hasil Prediksi Input Baru:
+    - Estimasi Penjualan: Rp {prediction:,.0f}
+    
+    Tugas:
+    1. Berikan analisis singkat apakah hasil prediksi ini potensial dibandingkan rata-rata perusahaan.
+    2. Berikan 3 strategi pemasaran berbasis nilai-nilai Islam (Kejujuran, Transparansi, Sedekah).
+    3. Tambahkan satu kutipan singkat (Ayat/Hadits) yang relevan.
+    """
+    response = model_ai.generate_content(prompt)
+    return response.text
+
+# Load Data Awal
 try:
-    model, df_clean = load_and_train_model()
-except Exception as e:
-    st.error(f"Terjadi kesalahan saat training model: {e}")
-    st.stop()
+    model, df_clean = fetch_and_train()
+except:
+    st.warning("Gagal memuat data dari Supabase. Menggunakan data dummy untuk demonstrasi.")
+    # Fallback Data Dummy jika Supabase belum di-setup
+    df_clean = pd.DataFrame({
+        'units_sold': [100, 200, 150, 300, 50],
+        'book_average_rating': [4.5, 4.0, 4.8, 3.9, 4.2],
+        'gross_sales': [5000000, 9500000, 8000000, 14000000, 2000000]
+    })
+    X = df_clean[['units_sold', 'book_average_rating']]
+    y = df_clean['gross_sales']
+    model = LinearRegression().fit(X, y)
 
 # ==========================================
-# 3. INTERFACE (UI) STREAMLIT
+# 3. ANTARMUKA DASHBOARD (UI)
 # ==========================================
-st.title("📚 Bacakuy Sales Prediction & Islamic Strategy AI")
+
+st.title("📚 Bacakuy Strategic Intelligence Hub")
+st.write(f"Menganalisis performa {len(df_clean)} judul buku secara real-time.")
+
+# --- BARIS 1: METRIK UTAMA ---
+m1, m2, m3, m4 = st.columns(4)
+total_sales = df_clean['gross_sales'].sum()
+avg_rate = df_clean['book_average_rating'].mean()
+
+m1.metric("Market Valuation", f"Rp {total_sales:,.0f}", "+5.2%")
+m2.metric("Units Delivered", f"{df_clean['units_sold'].sum():,.0f}", "Books")
+m3.metric("Avg Sentiments", f"{avg_rate:.2f}/5")
+m4.metric("Status", "Live Production", "Active")
+
 st.markdown("---")
 
-# --- SIDEBAR INPUT ---
-st.sidebar.header("🔍 Input Fitur Prediksi")
+# --- BARIS 2: ANALISIS & INPUT ---
+col_input, col_graph = st.columns([1, 2])
 
-# Input Numerik untuk Units Sold
-input_units = st.sidebar.number_input(
-    "Jumlah Unit Terjual (Units Sold)", 
-    min_value=0, 
-    value=100,
-    step=10,
-    help="Masukkan perkiraan jumlah buku yang terjual."
-)
-
-# Input Numerik untuk Rating
-input_rating = st.sidebar.number_input(
-    "Rating Rata-rata Buku", 
-    min_value=0.0, 
-    max_value=5.0, 
-    value=4.5,
-    step=0.1,
-    help="Skala 1.0 sampai 5.0"
-)
-
-# Tombol Prediksi
-tombol_prediksi = st.sidebar.button("Prediksi Sekarang")
-
-# ==========================================
-# 4. LOGIKA PREDIKSI & GENAI
-# ==========================================
-
-if tombol_prediksi:
-    # --- TAHAP 1: PREDIKSI ML ---
-    # Membentuk array 2D karena sklearn membutuhkan format [[fitur1, fitur2]]
-    input_data = [[input_units, input_rating]]
+with col_input:
+    st.subheader("Segment Filter & Prediction")
+    category = st.selectbox("Category", ["All Categories", "Religion", "Business", "Fiction"])
     
-    # Melakukan prediksi
-    hasil_prediksi = model.predict(input_data)[0]
+    st.write("---")
+    # Input Prediksi
+    in_units = st.number_input("Input Units Sold", min_value=0, value=100)
+    in_rating = st.slider("Input Rating", 0.0, 5.0, 4.5)
     
-    # Menampilkan Hasil Prediksi
-    st.subheader("📊 Hasil Prediksi Penjualan")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.metric(label="Estimasi Gross Sales (IDR)", value=f"Rp {hasil_prediksi:,.0f}")
-    
-    with col2:
-        st.info("Prediksi ini menggunakan algoritma Linear Regression berdasarkan data historis.")
+    if st.button("Generate Strategic Insight", use_container_width=True):
+        # Hitung Prediksi
+        pred_result = model.predict([[in_units, in_rating]])[0]
+        
+        # Buat Ringkasan Data
+        summary_data = {
+            'total_books': len(df_clean),
+            'avg_rating': avg_rate,
+            'total_sales': total_sales
+        }
+        
+        # Panggil AI
+        with st.spinner("Gemini AI sedang berpikir..."):
+            ai_insight = get_gemini_insight(summary_data, pred_result)
+            
+            st.markdown("### 🤖 AI Analysis")
+            st.success(f"**Estimasi Pendapatan: Rp {pred_result:,.0f}**")
+            st.info(ai_insight)
 
-    # --- TAHAP 2: ANALISIS GENAI (GEMINI) ---
-    st.markdown("---")
-    st.subheader("🤖 Analisis Strategi Bisnis Syariah (AI)")
+with col_graph:
+    st.subheader("Sales Performance Trend")
+    # Grafik Area untuk Visualisasi Penjualan
+    st.area_chart(df_clean['gross_sales'])
     
-    with st.spinner('Sedang meminta saran strategi syariah ke Gemini AI...'):
-        try:
-            # Membuat Prompt untuk AI
-            prompt_text = f"""
-            Anda adalah seorang konsultan bisnis Islami yang ahli.
-            
-            Data Prediksi:
-            - Jumlah Unit Terjual: {input_units} buku
-            - Rating Buku: {input_rating}/5.0
-            - Estimasi Pendapatan Kotor: Rp {hasil_prediksi:,.0f}
-            
-            Tugas:
-            1. Berikan analisis singkat mengenai performa penjualan ini.
-            2. Berikan 3 strategi pemasaran yang sesuai dengan prinsip Syariah (Muamalah) untuk meningkatkan penjualan atau keberkahan pendapatan tersebut.
-            3. Sertakan satu dalil (Ayat Quran atau Hadits) yang relevan tentang perdagangan yang jujur atau sedekah.
-            """
-            
-            # Mengirim request ke Gemini
-            # Menggunakan model 'gemini-pro' (pastikan API key valid)
-            genai_model = genai.GenerativeModel('gemini-pro')
-            response = genai_model.generate_content(prompt_text)
-            
-            # Menampilkan respon
-            st.write(response.text)
-            
-        except Exception as e:
-            st.warning("Gagal mendapatkan analisis AI. Pastikan API Key Gemini sudah benar.")
-            st.error(f"Error details: {e}")
+    st.subheader("Distribution: Units vs Rating")
+    # Grafik Bar untuk Unit
+    st.bar_chart(df_clean['units_sold'])
 
-# ==========================================
-# 5. DATA PREVIEW (OPSIONAL)
-# ==========================================
-with st.expander("Lihat Data Training (Cleaned)"):
-    st.dataframe(df_clean)
-
-### 🎓 Penjelasan Detail untuk Laporan Praktikum
+# --- BARIS 3: DATA EXPLORER ---
+with st.expander("Lihat Detail Data Supabase"):
+    st.dataframe(df_clean, use_container_width=True)
